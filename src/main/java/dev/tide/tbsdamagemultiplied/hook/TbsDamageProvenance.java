@@ -2,6 +2,8 @@ package dev.tide.tbsdamagemultiplied.hook;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
 
 import dev.tide.tbsdamagemultiplied.integration.tbs.TbsDamagePath;
@@ -30,7 +32,7 @@ public final class TbsDamageProvenance {
         private boolean alreadyScaled;
         private final ResourceLocation expectedDamageType;
         private final boolean requiresPlayerAttackSource;
-        private boolean observedEvent;
+        private final Set<Integer> observedTargets = new HashSet<>();
 
         private Frame(
             TbsDamagePath path,
@@ -51,7 +53,6 @@ public final class TbsDamageProvenance {
         public TbsDamagePath path() { return path; }
         public boolean alreadyScaled() { return alreadyScaled; }
         void setAlreadyScaled(boolean value) { alreadyScaled = value; }
-        void observeEvent() { observedEvent = true; }
 
         boolean matches(ServerPlayer player, Entity victim, DamageSource source) {
             return ownerId != null
@@ -62,6 +63,15 @@ public final class TbsDamageProvenance {
                         .map(key -> key.location()).orElse(null)))
                 && (!requiresPlayerAttackSource
                     || (source.getDirectEntity() == player && source.getEntity() == player));
+        }
+
+        boolean tryObserve(ServerPlayer player, Entity victim, DamageSource source) {
+            if (!matches(player, victim, source)) {
+                return false;
+            }
+
+            int observedTarget = targetId == ANY_TARGET ? victim.getId() : targetId;
+            return observedTargets.add(observedTarget);
         }
     }
 
@@ -95,11 +105,11 @@ public final class TbsDamageProvenance {
             FRAMES.remove();
             return null;
         }
-        if (!frame.matches(player, victim, source)) {
-            return null;
-        }
-        frame.observeEvent();
-        return frame;
+        // ANY_TARGET is best-effort provenance for audited multi-target calls.
+        // Victims are de-duplicated within the call, but an unrelated nested damage
+        // event with identical owner/source semantics and a new victim cannot be
+        // distinguished here.
+        return frame.tryObserve(player, victim, source) ? frame : null;
     }
 
     /** Ends one audited call and pops exactly its still-top provenance frame. */
