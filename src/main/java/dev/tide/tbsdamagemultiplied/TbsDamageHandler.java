@@ -1,6 +1,7 @@
 package dev.tide.tbsdamagemultiplied;
 
 import dev.tide.tbsdamagemultiplied.integration.tbs.TbsDamageClassifier;
+import dev.tide.tbsdamagemultiplied.integration.tbs.TbsAbilityAdapter;
 import dev.tide.tbsdamagemultiplied.integration.tbs.TbsDamagePath;
 import dev.tide.tbsdamagemultiplied.hook.TbsDamageProvenance;
 import dev.tide.tbsdamagemultiplied.hook.TbsProjectileDamageHook;
@@ -74,7 +75,8 @@ public final class TbsDamageHandler {
         }
 
         // Exclude genuine left-click melee: that hit already uses full player attributes.
-        if (LeftClickTracker.isGenuineLeftClick(
+        if (isVanillaPlayerAttack(source, player)
+            && LeftClickTracker.isGenuineLeftClick(
                 player.getUUID(), victim.getId(), player.level().getGameTime())) {
             debug(() -> "skip left-click | victim=" + victim.getId());
             return;
@@ -95,9 +97,9 @@ public final class TbsDamageHandler {
                     String.valueOf(ctx.damageTypeId()),
                     String.valueOf(ctx.directEntityId()),
                     String.valueOf(ctx.causingEntityId()),
-                    ctx.activeAbilityName().orElse("-"),
+                    TbsAbilityAdapter.getActiveAbilityName(player).orElse("-"),
                     event.getAmount(), victim.getId()));
-                maybeLogUnknown(ctx, victim, event.getAmount());
+                maybeLogUnknown(ctx, player, victim, event.getAmount());
             }
         }
     }
@@ -146,7 +148,8 @@ public final class TbsDamageHandler {
      * When an unmarked player_attack hit falls through to IGNORE it may be a new TBS
      * path that needs triaging. Log it (once-per-hit) if debugUnknownPaths is on.
      */
-    private static void maybeLogUnknown(DamageContext ctx, Entity victim, float amount) {
+    private static void maybeLogUnknown(
+        DamageContext ctx, ServerPlayer player, Entity victim, float amount) {
         if (!TbsDamageMultipliedConfig.COMMON.debugUnknownPaths.get()) {
             return;
         }
@@ -158,8 +161,15 @@ public final class TbsDamageHandler {
             String.valueOf(ctx.damageTypeId()),
             String.valueOf(ctx.directEntityId()),
             String.valueOf(ctx.causingEntityId()),
-            ctx.activeAbilityName().orElse("-"),
+            TbsAbilityAdapter.getActiveAbilityName(player).orElse("-"),
             amount, victim.getId());
+    }
+
+    private static boolean isVanillaPlayerAttack(DamageSource source, ServerPlayer player) {
+        return TbsDamageClassifier.PLAYER_ATTACK.equals(
+                TbsDamageClassifier.damageTypeId(source))
+            && source.getDirectEntity() == player
+            && source.getEntity() == player;
     }
 
     private static void debug(java.util.function.Supplier<String> message) {

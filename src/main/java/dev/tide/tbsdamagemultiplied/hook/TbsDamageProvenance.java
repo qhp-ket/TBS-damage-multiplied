@@ -66,7 +66,11 @@ public final class TbsDamageProvenance {
     static Frame consumeMatching(ServerPlayer player, Entity victim, DamageSource source) {
         Deque<Frame> frames = FRAMES.get();
         Frame frame = frames.peek();
-        if (frame == null || !frame.matches(player, victim, source)) {
+        if (frame == null) {
+            FRAMES.remove();
+            return null;
+        }
+        if (!frame.matches(player, victim, source)) {
             return null;
         }
         frames.pop();

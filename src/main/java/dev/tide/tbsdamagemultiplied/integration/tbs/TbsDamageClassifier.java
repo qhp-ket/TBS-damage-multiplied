@@ -81,8 +81,7 @@ public final class TbsDamageClassifier {
         Entity causing = source.getEntity();
         return new DamageContext(
             source, player, direct, causing, damageTypeId(source),
-            entityId(direct), entityId(causing),
-            TbsAbilityAdapter.getActiveAbilityName(player));
+            entityId(direct), entityId(causing));
     }
 
     public static ResourceLocation damageTypeId(DamageSource source) {

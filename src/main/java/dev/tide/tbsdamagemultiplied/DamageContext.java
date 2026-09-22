@@ -1,7 +1,5 @@
 package dev.tide.tbsdamagemultiplied;
 
-import java.util.Optional;
-
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
@@ -18,7 +16,6 @@ public record DamageContext(
     Entity causingEntity,
     ResourceLocation damageTypeId,
     ResourceLocation directEntityId,
-    ResourceLocation causingEntityId,
-    Optional<String> activeAbilityName
+    ResourceLocation causingEntityId
 ) {
 }

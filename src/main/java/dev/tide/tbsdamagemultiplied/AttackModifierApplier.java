@@ -46,7 +46,8 @@ public final class AttackModifierApplier {
 
     /**
      * Folds the player's ATTACK_DAMAGE modifiers onto {@code baseDamage}. Returns
-     * {@code baseDamage} unchanged on any failure so a broken read never distorts damage.
+     * {@code baseDamage} unchanged on null, invalid, or runtime-failing reads so a
+     * broken third-party attribute provider never distorts damage.
      */
     public static double applyAttackModifiers(
         ServerPlayer player,
@@ -55,49 +56,53 @@ public final class AttackModifierApplier {
         if (!policy.enabled()) {
             return baseDamage;
         }
-        AttributeInstance attack = player.getAttribute(Attributes.ATTACK_DAMAGE);
-        if (attack == null) {
+        try {
+            AttributeInstance attack = player.getAttribute(Attributes.ATTACK_DAMAGE);
+            if (attack == null) {
+                return baseDamage;
+            }
+
+            Set<UUID> excluded = mainHandAttackModifierIds(player);
+
+            double addition = 0.0;
+            double multiplyBase = 0.0;
+            List<Double> multiplyTotal = new ArrayList<>();
+
+            for (AttributeModifier modifier : attack.getModifiers()) {
+                if (excluded.contains(modifier.getId())
+                    && !includeMainHandModifier(policy, modifier.getOperation())) {
+                    continue;
+                }
+                switch (modifier.getOperation()) {
+                    case ADDITION -> addition += modifier.getAmount();
+                    case MULTIPLY_BASE -> multiplyBase += modifier.getAmount();
+                    case MULTIPLY_TOTAL -> multiplyTotal.add(modifier.getAmount());
+                }
+            }
+
+            // Vanilla AttributeInstance.calculateValue order: base+ADDITION, then
+            // *(1+sum MULTIPLY_BASE), then a separate *(1+amount) per MULTIPLY_TOTAL.
+            // Each operation can be disabled independently via config.
+            double value = baseDamage;
+            if (policy.addition()) {
+                value += addition;
+            }
+            if (policy.multiplyBase()) {
+                value = value + value * multiplyBase;
+            }
+            if (policy.multiplyTotal()) {
+                for (double amount : multiplyTotal) {
+                    value = value * (1.0 + amount);
+                }
+            }
+
+            if (!Double.isFinite(value)) {
+                return baseDamage;
+            }
+            return Math.max(0.0, value);
+        } catch (RuntimeException ignored) {
             return baseDamage;
         }
-
-        Set<UUID> excluded = mainHandAttackModifierIds(player);
-
-        double addition = 0.0;
-        double multiplyBase = 0.0;
-        List<Double> multiplyTotal = new ArrayList<>();
-
-        for (AttributeModifier modifier : attack.getModifiers()) {
-            if (excluded.contains(modifier.getId())
-                && !includeMainHandModifier(policy, modifier.getOperation())) {
-                continue;
-            }
-            switch (modifier.getOperation()) {
-                case ADDITION -> addition += modifier.getAmount();
-                case MULTIPLY_BASE -> multiplyBase += modifier.getAmount();
-                case MULTIPLY_TOTAL -> multiplyTotal.add(modifier.getAmount());
-            }
-        }
-
-        // Vanilla AttributeInstance.calculateValue order: base+ADDITION, then
-        // *(1+sum MULTIPLY_BASE), then a separate *(1+amount) per MULTIPLY_TOTAL.
-        // Each operation can be disabled independently via config.
-        double value = baseDamage;
-        if (policy.addition()) {
-            value += addition;
-        }
-        if (policy.multiplyBase()) {
-            value = value + value * multiplyBase;
-        }
-        if (policy.multiplyTotal()) {
-            for (double amount : multiplyTotal) {
-                value = value * (1.0 + amount);
-            }
-        }
-
-        if (!Double.isFinite(value)) {
-            return baseDamage;
-        }
-        return Math.max(0.0, value);
     }
 
     private static boolean includeMainHandModifier(
