@@ -1,4 +1,4 @@
-# TBSDamageMultiplied
+# TBS Damage Multiplied
 
 A focused Forge 1.20.1 add-on for Torches Become Sunlight (TBS). It fixes only
 confirmed player-owned TBS implementation paths whose fixed damage omits the
