@@ -10,7 +10,9 @@ var AbstractInsnNode = Java.type('org.objectweb.asm.tree.AbstractInsnNode');
 
 var HOOK_OWNER = 'dev/tide/tbsdamagemultiplied/hook/TbsProjectileDamageHook';
 var HOOK_NAME = 'scaleWithOwner';
-var HOOK_DESC = '(FLnet/minecraft/world/entity/Entity;Ljava/lang/String;Z)F';
+var HOOK_DESC = '(FLnet/minecraft/world/entity/Entity;Lnet/minecraft/world/entity/Entity;Ljava/lang/String;Z)F';
+var MARK_FIXED_NAME = 'markFixedPath';
+var MARK_FIXED_DESC = '(Lnet/minecraft/world/entity/Entity;Lnet/minecraft/world/entity/Entity;Ljava/lang/String;)V';
 var CLEAR_NAME = 'clearEventScaledPath';
 var CLEAR_DESC = '()V';
 var GET_OWNER = 'm_19749_';
@@ -18,24 +20,45 @@ var GET_OWNER_DESC = '()Lnet/minecraft/world/entity/Entity;';
 var HURT = 'm_6469_';
 var ACTUALLY_HURT = 'm_6475_';
 var PLAYER_ATTACK = 'm_269075_';
+var PLAYER_ATTACK_DESC = '(Lnet/minecraft/world/entity/player/Player;)Lnet/minecraft/world/damagesource/DamageSource;';
+var DAMAGE_SOURCES = 'm_269291_';
+var DAMAGE_SOURCES_DESC = '()Lnet/minecraft/world/damagesource/DamageSources;';
 
 function initializeCoreMod() {
     return {
         'tbs_bullet_direct_hit': projectileHook(
             'com.freefish.torchesbecomesunlight.server.entity.projectile.Bullet',
-            'hitEntity', HURT, afterPlayerAttackSource, 'tbs:bullet_direct_hit', true),
+            'hitEntity', HURT, afterPlayerAttackSource, 'tbs:bullet_direct_hit', true, 3),
         'tbs_ice_crystal_hit': projectileHook(
             'com.freefish.torchesbecomesunlight.server.entity.projectile.IceCrystal',
-            'hitEntity', HURT, firstMatch, 'tbs:ice_crystal_hit', true),
+            'hitEntity', HURT, firstMatch, 'tbs:ice_crystal_hit', true, 1),
         'tbs_lighting_boom': projectileHook(
             'com.freefish.torchesbecomesunlight.server.entity.projectile.LightingBoom',
-            'hitEntity', HURT, firstMatch, 'tbs:lighting_boom', true),
+            'hitEntity', HURT, firstMatch, 'tbs:lighting_boom', true, 7),
         'tbs_halberd_flight_hit': projectileHook(
             'com.freefish.torchesbecomesunlight.server.entity.projectile.HalberdOTIEntity',
-            'm_5790_', HURT, firstMatch, 'tbs:halberd_flight_hit', true),
+            'm_5790_', HURT, firstMatch, 'tbs:halberd_flight_hit', true, 2),
         'tbs_machete_followup': casterHook(
             'com.freefish.torchesbecomesunlight.server.entity.effect.PlayerSkillHelpEntity',
             'doDemonAttack', ACTUALLY_HURT, firstMatch, 'tbs:machete_followup', false),
+        'tbs_machete_primary': abilityFixedPathHook(
+            'com.freefish.torchesbecomesunlight.server.ability.abilities.UseMachete1Ability',
+            'tickUsing', 'tbs:machete_primary'),
+        'tbs_ice_broadsword': abilityFixedPathHook(
+            'com.freefish.torchesbecomesunlight.server.ability.abilities.UseIceBroadswordAbility',
+            'doRangeAttack', 'tbs:ice_broadsword'),
+        'tbs_halberd_chi': abilityFixedPathHook(
+            'com.freefish.torchesbecomesunlight.server.ability.abilities.UseHalberdChiAbility',
+            'doRangeAttack', 'tbs:halberd_chi'),
+        'tbs_halberd_wind': abilityFixedPathHook(
+            'com.freefish.torchesbecomesunlight.server.ability.abilities.UseSHalberdWindAbility',
+            'tickUsing', 'tbs:halberd_wind'),
+        'tbs_halberd_light_wind': abilityFixedPathHook(
+            'com.freefish.torchesbecomesunlight.server.ability.abilities.UseSHalberdWindLightAbility',
+            'tickUsing', 'tbs:halberd_light_wind'),
+        'tbs_gravestone_slash': abilityFixedPathHook(
+            'com.freefish.torchesbecomesunlight.server.ability.abilities.UseGraveStoneSlashAbility',
+            'doRangeAttack', 'tbs:gravestone_slash'),
         'tbs_rosmontis_embrace_assist': rosmontisEmbraceAssistHook()
     };
 }
@@ -57,7 +80,11 @@ function afterPlayerAttackSource(method, targetCall) {
 }
 
 function isCall(insn, name) {
-    return insn.getType() == AbstractInsnNode.METHOD_INSN && insn.name == name;
+    return insn != null && insn.getType() == AbstractInsnNode.METHOD_INSN && insn.name == name;
+}
+
+function isCallWithDesc(insn, name, desc) {
+    return isCall(insn, name) && insn.desc == desc;
 }
 
 function previousCode(insn) {
@@ -95,6 +122,65 @@ function isZeroFloat(insn) {
 
 function isFalse(insn) {
     return insn != null && insn.getOpcode() == Opcodes.ICONST_0;
+}
+
+/**
+ * Finds one direct ability hurt call with the exact playerAttack source setup:
+ * target, player.damageSources(), player, playerAttack(player), amount, hurt.
+ * The target and player locals are captured so the provenance frame can match the
+ * later event rather than inferring it from the player's active ability.
+ */
+function findAbilityFixedHurt(insn) {
+    if (!isCall(insn, HURT)) return null;
+
+    for (var cursor = previousCode(insn); cursor != null; cursor = previousCode(cursor)) {
+        if (!isCallWithDesc(cursor, PLAYER_ATTACK, PLAYER_ATTACK_DESC)) continue;
+
+        var ownerLoad = previousCode(cursor);
+        var damageSourcesCall = previousCode(ownerLoad);
+        var playerLoad = previousCode(damageSourcesCall);
+        var targetLoad = previousCode(playerLoad);
+        if (isAload(ownerLoad) && isCallWithDesc(
+                damageSourcesCall, DAMAGE_SOURCES, DAMAGE_SOURCES_DESC)
+            && isAload(playerLoad) && isAload(targetLoad)
+            && ownerLoad.var == playerLoad.var) {
+            return {'call': insn, 'targetVar': targetLoad.var, 'ownerVar': ownerLoad.var};
+        }
+    }
+    return null;
+}
+
+function abilityFixedPathHook(className, methodName, pathId) {
+    return {
+        'target': {'type': 'CLASS', 'name': className},
+        'transformer': function(node) {
+            var matches = [];
+            for (var mi = 0; mi < node.methods.size(); mi++) {
+                var method = node.methods.get(mi);
+                if (method.name != methodName) continue;
+                for (var insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+                    var match = findAbilityFixedHurt(insn);
+                    if (match != null) matches.push({'method': method, 'match': match});
+                }
+            }
+            if (matches.length != 1) {
+                throw new Error('tbs_damage_multiplied: expected exactly one playerAttack hurt injection in '
+                    + className + '.' + methodName + ', found ' + matches.length);
+            }
+
+            var entry = matches[0];
+            var before = new InsnList();
+            before.add(new VarInsnNode(Opcodes.ALOAD, entry.match.targetVar));
+            before.add(new VarInsnNode(Opcodes.ALOAD, entry.match.ownerVar));
+            before.add(new LdcInsnNode(pathId));
+            before.add(new MethodInsnNode(
+                Opcodes.INVOKESTATIC, HOOK_OWNER, MARK_FIXED_NAME, MARK_FIXED_DESC, false));
+            entry.method.instructions.insertBefore(entry.match.call, before);
+            entry.method.instructions.insert(entry.match.call, new MethodInsnNode(
+                Opcodes.INVOKESTATIC, HOOK_OWNER, CLEAR_NAME, CLEAR_DESC, false));
+            return node;
+        }
+    };
 }
 
 /**
@@ -154,6 +240,7 @@ function rosmontisEmbraceAssistHook() {
                 var entry = matches[i];
                 var before = new InsnList();
                 before.add(new VarInsnNode(Opcodes.ALOAD, entry.match.ownerVar));
+                before.add(new InsnNode(Opcodes.ACONST_NULL));
                 before.add(new LdcInsnNode('tbs:rosmontis_embrace_assist'));
                 before.add(new InsnNode(Opcodes.ICONST_1));
                 before.add(new MethodInsnNode(
@@ -169,13 +256,18 @@ function rosmontisEmbraceAssistHook() {
     };
 }
 
-function projectileHook(className, methodName, targetCall, locate, pathId, emitsEvent) {
+function projectileHook(className, methodName, targetCall, locate, pathId, emitsEvent, targetVar) {
     return buildTransformer(className, methodName, targetCall, locate, pathId, emitsEvent,
         function(node) {
             var load = new InsnList();
             load.add(new VarInsnNode(Opcodes.ALOAD, 0));
             load.add(new MethodInsnNode(
                 Opcodes.INVOKEVIRTUAL, node.name, GET_OWNER, GET_OWNER_DESC, false));
+            return load;
+        },
+        function(node) {
+            var load = new InsnList();
+            load.add(new VarInsnNode(Opcodes.ALOAD, targetVar));
             return load;
         });
 }
@@ -189,10 +281,16 @@ function casterHook(className, methodName, targetCall, locate, pathId, emitsEven
                 Opcodes.GETFIELD, node.name, 'caster',
                 'Lnet/minecraft/world/entity/LivingEntity;'));
             return load;
+        },
+        function(node) {
+            var load = new InsnList();
+            load.add(new InsnNode(Opcodes.ACONST_NULL));
+            return load;
         });
 }
 
-function buildTransformer(className, methodName, targetCall, locate, pathId, emitsEvent, ownerLoad) {
+function buildTransformer(
+    className, methodName, targetCall, locate, pathId, emitsEvent, ownerLoad, targetLoad) {
     return {
         'target': {'type': 'CLASS', 'name': className},
         'transformer': function(node) {
@@ -204,6 +302,7 @@ function buildTransformer(className, methodName, targetCall, locate, pathId, emi
                 if (target == null) continue;
 
                 var before = ownerLoad(node);
+                before.add(targetLoad(node));
                 before.add(new LdcInsnNode(pathId));
                 before.add(new InsnNode(emitsEvent ? Opcodes.ICONST_1 : Opcodes.ICONST_0));
                 before.add(new MethodInsnNode(

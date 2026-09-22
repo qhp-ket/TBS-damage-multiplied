@@ -12,7 +12,8 @@ import net.minecraft.world.entity.Entity;
  * The only place that reaches into TBS internals. Everything is done through
  * reflection / {@link MethodHandle} so that a TBS update which renames or removes a
  * class or method degrades to "no active ability detected" (a warning, once) rather
- * than crashing the game.
+ * than crashing the game. Active ability is diagnostic-only; fixed damage paths are
+ * attributed by explicit coremod provenance frames rather than this value.
  *
  * <p>Reflection targets, verified against {@code torchesbecomesunlight-0.5.0-hotfix2}:</p>
  * <ul>

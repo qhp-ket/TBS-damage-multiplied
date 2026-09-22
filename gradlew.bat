@@ -33,12 +33,6 @@ set APP_HOME=%DIRNAME%
 @rem Resolve any "." and ".." in APP_HOME to make it shorter.
 for %%i in ("%APP_HOME%") do set APP_HOME=%%~fi
 
-@rem Prefer the Minecraft instance's reproducible Gradle cache and Java 17 when present.
-set TBS_GRADLE_ARGS=
-if not defined GRADLE_USER_HOME if exist "%APP_HOME%\..\.gradle-home" set GRADLE_USER_HOME=%APP_HOME%\..\.gradle-home
-if exist "%APP_HOME%\..\.gradle-home" set TBS_GRADLE_ARGS=--offline
-if exist "%APP_HOME%\..\java\jdk-17.0.20.1+1\bin\java.exe" set JAVA_HOME=%APP_HOME%\..\java\jdk-17.0.20.1+1
-
 @rem Add default JVM options here. You can also use JAVA_OPTS and GRADLE_OPTS to pass JVM options to this script.
 set DEFAULT_JVM_OPTS="-Xmx64m" "-Xms64m"
 
@@ -78,7 +72,7 @@ set CLASSPATH=%APP_HOME%\gradle\wrapper\gradle-wrapper.jar
 
 
 @rem Execute Gradle
-"%JAVA_EXE%" %DEFAULT_JVM_OPTS% %JAVA_OPTS% %GRADLE_OPTS% "-Dorg.gradle.appname=%APP_BASE_NAME%" -classpath "%CLASSPATH%" org.gradle.wrapper.GradleWrapperMain %* %TBS_GRADLE_ARGS%
+"%JAVA_EXE%" %DEFAULT_JVM_OPTS% %JAVA_OPTS% %GRADLE_OPTS% "-Dorg.gradle.appname=%APP_BASE_NAME%" -classpath "%CLASSPATH%" org.gradle.wrapper.GradleWrapperMain %*
 
 :end
 @rem End local scope for the variables with windows NT shell

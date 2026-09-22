@@ -18,14 +18,6 @@ public final class TbsDamageClassifier {
             "torchesbecomesunlight", "no_trigger_no_armor_attack");
     private static final ResourceLocation BULLET = tbs("bullet");
 
-    private static final Map<String, TbsDamagePath> FIXED_ABILITIES = Map.of(
-        "use_machete1_ability", TbsDamagePath.MACHETE_PRIMARY,
-        "use_ice_broadsword_ability", TbsDamagePath.ICE_BROADSWORD,
-        "use_halberd_chi_ability", TbsDamagePath.HALBERD_CHI,
-        "use_swind_ability", TbsDamagePath.HALBERD_WIND,
-        "use_slightwind_ability", TbsDamagePath.HALBERD_LIGHT_WIND,
-        "use_gravestone_slash_ability", TbsDamagePath.GRAVESTONE_SLASH);
-
     private static final Map<ResourceLocation, TbsDamagePath> NATIVE_ENTITIES = Map.of(
         tbs("drone_projectile"), TbsDamagePath.DRONE_PROJECTILE,
         tbs("stomp_entity"), TbsDamagePath.STOMP,
@@ -57,11 +49,6 @@ public final class TbsDamageClassifier {
             return TbsDamagePath.ICE_CRYSTAL_HIT;
         }
 
-        if (PLAYER_ATTACK.equals(ctx.damageTypeId())) {
-            return ctx.activeAbilityName()
-                .map(FIXED_ABILITIES::get)
-                .orElse(TbsDamagePath.UNKNOWN);
-        }
         return TbsDamagePath.UNKNOWN;
     }
 

@@ -2,6 +2,7 @@ package dev.tide.tbsdamagemultiplied;
 
 import dev.tide.tbsdamagemultiplied.integration.tbs.TbsDamageClassifier;
 import dev.tide.tbsdamagemultiplied.integration.tbs.TbsDamagePath;
+import dev.tide.tbsdamagemultiplied.hook.TbsDamageProvenance;
 import dev.tide.tbsdamagemultiplied.hook.TbsProjectileDamageHook;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.damagesource.DamageSource;
@@ -9,6 +10,8 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraftforge.event.entity.living.LivingHurtEvent;
 import net.minecraftforge.event.entity.player.AttackEntityEvent;
+import net.minecraftforge.event.entity.player.PlayerEvent;
+import net.minecraftforge.event.server.ServerStoppingEvent;
 import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 
@@ -36,27 +39,37 @@ public final class TbsDamageHandler {
         LeftClickTracker.record(player.getUUID(), target.getId(), player.level().getGameTime());
     }
 
-    @SubscribeEvent(priority = EventPriority.NORMAL)
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
     public void onLivingHurt(LivingHurtEvent event) {
-        if (!TbsDamageMultipliedConfig.COMMON.enabled.get()) {
-            return;
-        }
-
         Entity victim = event.getEntity();
         if (victim == null || victim.level().isClientSide()) {
             return;
         }
 
         DamageSource source = event.getSource();
-        TbsDamagePath hookPath = TbsProjectileDamageHook.consumeEventScaledPath();
-        if (hookPath != null) {
-            debug(() -> "path=" + hookPath.id() + " reason=already_scaled_by_hook");
-            return;
-        }
-
         ServerPlayer player = TbsDamageClassifier.resolvePlayer(source);
         if (player == null) {
             debug(() -> "path=tbs:unknown reason=non_player_owner");
+            return;
+        }
+
+        // Consume explicit provenance before any other listener can synchronously emit
+        // nested damage. A non-matching nested event leaves the outer frame untouched.
+        TbsDamageProvenance.Frame frame =
+            TbsProjectileDamageHook.consumeMatchingFrame(player, victim, source);
+        if (frame != null) {
+            if (!TbsDamageMultipliedConfig.COMMON.enabled.get()) {
+                return;
+            }
+            if (frame.alreadyScaled()) {
+                debug(() -> "path=" + frame.path().id() + " reason=already_scaled_by_hook");
+                return;
+            }
+            applyFixedPath(event, player, frame.path());
+            return;
+        }
+
+        if (!TbsDamageMultipliedConfig.COMMON.enabled.get()) {
             return;
         }
 
@@ -72,26 +85,7 @@ public final class TbsDamageHandler {
         ScalingMode mode = path.mode();
 
         switch (mode) {
-            case FIXED -> {
-                float baseDamage = event.getAmount();
-                ModifierPolicy policy = TbsDamageMultipliedConfig.COMMON.policy(path);
-                if (!policy.enabled()) {
-                    debug(() -> "path=" + path.id() + " reason=disabled");
-                    return;
-                }
-                double result = AttackModifierApplier.applyAttackModifiers(
-                    player, baseDamage, policy);
-                if (!Double.isFinite(result) || result < 0.0) {
-                    return;
-                }
-                float newAmount = (float) result;
-                event.setAmount(newAmount);
-                debug(() -> String.format(
-                    "path=%s base=%.3f addition=%s multiplyBase=%s multiplyTotal=%s result=%.3f player=%s victim=%d",
-                    path.id(), baseDamage, policy.addition(), policy.multiplyBase(),
-                    policy.multiplyTotal(), newAmount, player.getGameProfile().getName(),
-                    victim.getId()));
-            }
+            case FIXED -> applyFixedPath(event, player, path);
             case NATIVE_ATTACK_SCALED -> debug(() -> String.format(
                 "path=%s reason=native_attack_scaled victim=%d", path.id(), victim.getId()));
             case IGNORE -> {
@@ -108,9 +102,49 @@ public final class TbsDamageHandler {
         }
     }
 
+    @SubscribeEvent
+    public void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
+        if (event.getEntity() != null) {
+            LeftClickTracker.forget(event.getEntity().getUUID());
+        }
+    }
+
+    @SubscribeEvent
+    public void onServerStopping(ServerStoppingEvent event) {
+        LeftClickTracker.clear();
+        TbsProjectileDamageHook.clearProvenance();
+    }
+
+    private static void applyFixedPath(
+        LivingHurtEvent event,
+        ServerPlayer player,
+        TbsDamagePath path) {
+        if (path.mode() != ScalingMode.FIXED) {
+            debug(() -> "path=" + path.id() + " reason=unexpected_provenance_mode");
+            return;
+        }
+        float baseDamage = event.getAmount();
+        ModifierPolicy policy = TbsDamageMultipliedConfig.COMMON.policy(path);
+        if (!policy.enabled()) {
+            debug(() -> "path=" + path.id() + " reason=disabled");
+            return;
+        }
+        double result = AttackModifierApplier.applyAttackModifiers(player, baseDamage, policy);
+        if (!Double.isFinite(result) || result < 0.0) {
+            return;
+        }
+        float newAmount = (float) result;
+        event.setAmount(newAmount);
+        debug(() -> String.format(
+            "path=%s base=%.3f addition=%s multiplyBase=%s multiplyTotal=%s result=%.3f player=%s victim=%d",
+            path.id(), baseDamage, policy.addition(), policy.multiplyBase(),
+            policy.multiplyTotal(), newAmount, player.getGameProfile().getName(),
+            event.getEntity().getId()));
+    }
+
     /**
-     * When a TBS-attributable player_attack hit falls through to IGNORE it may be a new
-     * TBS path that needs triaging. Log it (once-per-hit) if debugUnknownPaths is on.
+     * When an unmarked player_attack hit falls through to IGNORE it may be a new TBS
+     * path that needs triaging. Log it (once-per-hit) if debugUnknownPaths is on.
      */
     private static void maybeLogUnknown(DamageContext ctx, Entity victim, float amount) {
         if (!TbsDamageMultipliedConfig.COMMON.debugUnknownPaths.get()) {

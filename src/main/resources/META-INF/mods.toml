@@ -1,10 +1,10 @@
 modLoader="javafml"
 loaderVersion="[47,)"
-license="GPL v3"
+license="GPL-3.0"
 [[mods]]
 modId="${mod_id}"
 version="${version}"
-displayName="TBSDamageMultiplied"
+displayName="TBS Damage Multiplied"
 description='''Re-applies the player's ATTACK_DAMAGE modifiers to Torches Become Sunlight skills that deal a fixed configured number, treating that number as a temporary ATTACK_DAMAGE base. Skills that already read ATTACK_DAMAGE are left untouched.'''
 [[dependencies.${mod_id}]]
 modId="forge"

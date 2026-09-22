@@ -26,7 +26,12 @@ public final class LeftClickTracker {
     /** True when this hurt matches the player's genuine left-click this tick against this target. */
     public static boolean isGenuineLeftClick(UUID playerId, int targetId, long tick) {
         Record record = RECENT.get(playerId);
-        return record != null && record.tick() == tick && record.targetId() == targetId;
+        if (record == null || record.tick() != tick || record.targetId() != targetId) {
+            return false;
+        }
+        // One AttackEntityEvent represents one vanilla melee hit. Consume it so a
+        // same-tick, same-target follow-up from another implementation is classified normally.
+        return RECENT.remove(playerId, record);
     }
 
     public static void forget(UUID playerId) {

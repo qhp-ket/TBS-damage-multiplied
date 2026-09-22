@@ -2,8 +2,9 @@
 
 A focused Forge 1.20.1 add-on for Torches Become Sunlight (TBS). It fixes only
 confirmed player-owned TBS implementation paths whose fixed damage omits the
-player's active `generic.attack_damage` modifiers. Vanilla combat and unrelated
-mods are not intercepted.
+player's active `generic.attack_damage` modifiers. The classifier is intentionally
+conservative and is designed to leave vanilla combat, unrelated mods, native TBS
+scaling paths, and unknown paths unchanged.
 
 ## Damage model
 
@@ -29,9 +30,12 @@ Curios, relics, and other standard attribute sources remain. The live
 - Only `ServerPlayer` owners/casters can be multiplied; TBS bosses and NPCs are
   returned unchanged.
 - Known native ATTACK_DAMAGE paths and unknown paths are always left unchanged.
-- Narrow coremod hooks carry a stable path ID. A thread-local marker is consumed
-  by `LivingHurtEvent`, then cleared after `hurt`, preventing hook + event double
-  application.
+- Narrow coremod hooks carry a stable path ID and target/owner provenance when the
+  audited call site exposes both. A per-thread stack frame is consumed only by its
+  matching `LivingHurtEvent`, then balanced after `hurt`, preventing hook + event
+  double application without crossing nested damage calls.
+- Ability-driven fixed hits are marked at their audited `playerAttack -> hurt` call
+  sites; their path is never inferred merely from whichever TBS ability is active.
 - Genuine left-click attacks are excluded because vanilla already calculated
   their complete attack attribute.
 
@@ -71,10 +75,9 @@ Requirements: Java 17, Minecraft 1.20.1, Forge 47.4.23.
 gradlew.bat clean build
 ```
 
-The Windows wrapper automatically uses the sibling Minecraft-instance
-`.gradle-home` (offline, because that cache is complete) and
-`java/jdk-17.0.20.1+1` when present, while remaining a normal Gradle wrapper
-elsewhere. The publishable reobfuscated JAR is written to
+The repository uses the standard Gradle wrapper. Set `JAVA_HOME` (Java 17) and,
+when needed, `GRADLE_USER_HOME` in your environment; `--offline` is opt-in rather
+than being forced by the wrapper. The publishable reobfuscated JAR is written to
 `build/libs/`. TBS is a mandatory runtime dependency but none of its classes or
 resources are bundled into this JAR.
 
@@ -85,6 +88,16 @@ The integration and exact coremod call sites were audited against the local
 version `1.20.1-0.4.2`). A future TBS bytecode change deliberately fails the
 affected transformer loudly instead of silently patching an uncertain path.
 
+## Credits
+
+Torches Become Sunlight is created by free fish and its contributors.
+
+This project is an unofficial compatibility add-on and is not affiliated with or
+endorsed by the Torches Become Sunlight developers.
+
 ## License
 
-GNU GPL v3. See [LICENSE](LICENSE).
+GNU General Public License v3.0. See [LICENSE](LICENSE).
+
+Torches Become Sunlight is distributed under its own license. This project is
+released under GPL-3.0.

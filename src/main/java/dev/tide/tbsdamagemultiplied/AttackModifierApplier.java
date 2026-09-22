@@ -36,8 +36,9 @@ import net.minecraft.world.item.ItemStack;
  * second time, while allowing its MULTIPLY_BASE/MULTIPLY_TOTAL layers to participate.
  * Everything else a player has (Strength as ADDITION, attack-boost effects as
  * MULTIPLY_BASE, relics as MULTIPLY_TOTAL, Curios, Origins, potions, other gear)
- * participates automatically because it lives on the standard ATTACK_DAMAGE
- * attribute. The real AttributeMap is never mutated; all math is done in memory.</p>
+ * remains available through the standard ATTACK_DAMAGE attribute and participates
+ * when its corresponding operation is enabled by the path policy. The real
+ * AttributeMap is never mutated; all math is done in memory.</p>
  */
 public final class AttackModifierApplier {
     private AttackModifierApplier() {

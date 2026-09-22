@@ -1,0 +1,95 @@
+package dev.tide.tbsdamagemultiplied.hook;
+
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.UUID;
+
+import dev.tide.tbsdamagemultiplied.integration.tbs.TbsDamagePath;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.entity.Entity;
+
+/**
+ * Server-thread provenance frames for coremod-instrumented TBS damage calls.
+ *
+ * <p>A frame is pushed immediately before the audited call which emits damage and is
+ * consumed only by a matching {@code LivingHurtEvent}. The stack, rather than a single
+ * thread-local value, keeps nested damage calls isolated. The target is known for
+ * direct ability hits; range/projectile hooks use {@link #ANY_TARGET} when TBS does
+ * not expose the eventual victim at their narrow scaling call site.</p>
+ */
+public final class TbsDamageProvenance {
+    static final int ANY_TARGET = -1;
+
+    public record Frame(
+        TbsDamagePath path,
+        UUID ownerId,
+        int targetId,
+        boolean alreadyScaled,
+        ResourceLocation expectedDamageType,
+        boolean requiresPlayerAttackSource
+    ) {
+        boolean matches(ServerPlayer player, Entity victim, DamageSource source) {
+            return ownerId != null
+                && ownerId.equals(player.getUUID())
+                && (targetId == ANY_TARGET || targetId == victim.getId())
+                && (expectedDamageType == null
+                    || expectedDamageType.equals(source.typeHolder().unwrapKey()
+                        .map(key -> key.location()).orElse(null)))
+                && (!requiresPlayerAttackSource
+                    || (source.getDirectEntity() == player && source.getEntity() == player));
+        }
+    }
+
+    private static final ThreadLocal<Deque<Frame>> FRAMES =
+        ThreadLocal.withInitial(ArrayDeque::new);
+
+    private TbsDamageProvenance() {
+    }
+
+    static void push(
+        TbsDamagePath path,
+        Entity owner,
+        Entity target,
+        boolean alreadyScaled,
+        ResourceLocation expectedDamageType,
+        boolean requiresPlayerAttackSource
+    ) {
+        UUID ownerId = owner instanceof ServerPlayer player ? player.getUUID() : null;
+        int targetId = target == null ? ANY_TARGET : target.getId();
+        FRAMES.get().push(new Frame(
+            path, ownerId, targetId, alreadyScaled,
+            expectedDamageType, requiresPlayerAttackSource));
+    }
+
+    static Frame consumeMatching(ServerPlayer player, Entity victim, DamageSource source) {
+        Deque<Frame> frames = FRAMES.get();
+        Frame frame = frames.peek();
+        if (frame == null || !frame.matches(player, victim, source)) {
+            return null;
+        }
+        frames.pop();
+        removeThreadLocalWhenEmpty(frames);
+        return frame;
+    }
+
+    /** Balances one injected call after it returns when its frame was not consumed. */
+    static void discardTop() {
+        Deque<Frame> frames = FRAMES.get();
+        if (!frames.isEmpty()) {
+            frames.pop();
+        }
+        removeThreadLocalWhenEmpty(frames);
+    }
+
+    static void clear() {
+        FRAMES.remove();
+    }
+
+    private static void removeThreadLocalWhenEmpty(Deque<Frame> frames) {
+        if (frames.isEmpty()) {
+            FRAMES.remove();
+        }
+    }
+}
