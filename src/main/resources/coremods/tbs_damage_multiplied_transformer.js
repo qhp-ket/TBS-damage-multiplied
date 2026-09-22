@@ -21,6 +21,10 @@ var HURT = 'm_6469_';
 var ACTUALLY_HURT = 'm_6475_';
 var PLAYER_ATTACK = 'm_269075_';
 var PLAYER_ATTACK_DESC = '(Lnet/minecraft/world/entity/player/Player;)Lnet/minecraft/world/damagesource/DamageSource;';
+var REAL_DAMAGE_OWNER = 'com/freefish/rosmontislib/commom/init/DamageSourceHandle';
+var REAL_DAMAGE = 'realDamage';
+var REAL_DAMAGE_DESC = '(Lnet/minecraft/world/entity/Entity;)Lnet/minecraft/world/damagesource/DamageSource;';
+var HURT_DESC = '(Lnet/minecraft/world/damagesource/DamageSource;F)Z';
 var DAMAGE_SOURCES = 'm_269291_';
 var DAMAGE_SOURCES_DESC = '()Lnet/minecraft/world/damagesource/DamageSources;';
 
@@ -53,9 +57,7 @@ function initializeCoreMod() {
         'tbs_halberd_wind': abilityFixedPathHook(
             'com.freefish.torchesbecomesunlight.server.ability.abilities.UseSHalberdWindAbility',
             'tickUsing', 'tbs:halberd_wind'),
-        'tbs_halberd_light_wind': abilityFixedPathHook(
-            'com.freefish.torchesbecomesunlight.server.ability.abilities.UseSHalberdWindLightAbility',
-            'tickUsing', 'tbs:halberd_light_wind'),
+        'tbs_halberd_light_wind': halberdLightWindHook(),
         'tbs_gravestone_slash': abilityFixedPathHook(
             'com.freefish.torchesbecomesunlight.server.ability.abilities.UseGraveStoneSlashAbility',
             'doRangeAttack', 'tbs:gravestone_slash'),
@@ -181,6 +183,99 @@ function abilityFixedPathHook(className, methodName, pathId) {
             return node;
         }
     };
+}
+
+/**
+ * Finds the fixed 72F realDamage branch in Sacred Halberd Light Wind.
+ * The target and owner locals must be loaded immediately before the audited
+ * DamageSourceHandle.realDamage(Entity), amount, hurt sequence.
+ */
+function findHalberdLightWindRealDamageHurt(insn) {
+    if (!isCallWithDesc(insn, HURT, HURT_DESC)) return null;
+
+    var amount = previousCode(insn);
+    var realDamage = previousCode(amount);
+    var ownerLoad = previousCode(realDamage);
+    var targetLoad = previousCode(ownerLoad);
+    if (!isLdcNumber(amount, 72.0)
+        || !isCallWithDesc(realDamage, REAL_DAMAGE, REAL_DAMAGE_DESC)
+        || realDamage.owner != REAL_DAMAGE_OWNER
+        || !isAload(ownerLoad)
+        || !isAload(targetLoad)
+        || targetLoad.var == ownerLoad.var) {
+        return null;
+    }
+    return {
+        'call': insn,
+        'amount': amount,
+        'targetVar': targetLoad.var,
+        'ownerVar': ownerLoad.var
+    };
+}
+
+function halberdLightWindHook() {
+    var className = 'com.freefish.torchesbecomesunlight.server.ability.abilities.UseSHalberdWindLightAbility';
+    var methodName = 'tickUsing';
+    return {
+        'target': {'type': 'CLASS', 'name': className},
+        'transformer': function(node) {
+            var playerMatches = [];
+            var realDamageMatches = [];
+            for (var mi = 0; mi < node.methods.size(); mi++) {
+                var method = node.methods.get(mi);
+                if (method.name != methodName) continue;
+                for (var insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+                    var playerMatch = findAbilityFixedHurt(insn);
+                    if (playerMatch != null) {
+                        playerMatches.push({'method': method, 'match': playerMatch});
+                    }
+                    var realDamageMatch = findHalberdLightWindRealDamageHurt(insn);
+                    if (realDamageMatch != null) {
+                        realDamageMatches.push({'method': method, 'match': realDamageMatch});
+                    }
+                }
+            }
+
+            if (playerMatches.length != 1) {
+                throw new Error('tbs_damage_multiplied: expected exactly one Sacred Halberd Light Wind '
+                    + 'playerAttack hurt injection in ' + className + '.' + methodName
+                    + ', found ' + playerMatches.length);
+            }
+            if (realDamageMatches.length != 1) {
+                throw new Error('tbs_damage_multiplied: expected exactly one Sacred Halberd Light Wind '
+                    + 'realDamage 72F hurt injection in ' + className + '.' + methodName
+                    + ', found ' + realDamageMatches.length);
+            }
+
+            injectFixedPathMark(playerMatches[0], 'tbs:halberd_light_wind');
+            injectPreScaledFixedAmount(
+                realDamageMatches[0], 'tbs:halberd_light_wind_real_damage');
+            return node;
+        }
+    };
+}
+
+function injectFixedPathMark(entry, pathId) {
+    var before = new InsnList();
+    before.add(new VarInsnNode(Opcodes.ALOAD, entry.match.targetVar));
+    before.add(new VarInsnNode(Opcodes.ALOAD, entry.match.ownerVar));
+    before.add(new LdcInsnNode(pathId));
+    before.add(new MethodInsnNode(
+        Opcodes.INVOKESTATIC, HOOK_OWNER, MARK_FIXED_NAME, MARK_FIXED_DESC, false));
+    entry.method.instructions.insertBefore(entry.match.call, before);
+    entry.method.instructions.insert(entry.match.call, new MethodInsnNode(
+        Opcodes.INVOKESTATIC, HOOK_OWNER, CLEAR_NAME, CLEAR_DESC, false));
+}
+
+function injectPreScaledFixedAmount(entry, pathId) {
+    var scale = new InsnList();
+    scale.add(new VarInsnNode(Opcodes.ALOAD, entry.match.ownerVar));
+    scale.add(new VarInsnNode(Opcodes.ALOAD, entry.match.targetVar));
+    scale.add(new LdcInsnNode(pathId));
+    scale.add(new InsnNode(Opcodes.ICONST_0));
+    scale.add(new MethodInsnNode(
+        Opcodes.INVOKESTATIC, HOOK_OWNER, HOOK_NAME, HOOK_DESC, false));
+    entry.method.instructions.insert(entry.match.amount, scale);
 }
 
 /**

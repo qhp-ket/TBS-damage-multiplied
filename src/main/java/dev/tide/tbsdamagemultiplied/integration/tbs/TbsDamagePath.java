@@ -12,6 +12,7 @@ public enum TbsDamagePath {
     HALBERD_CHI("halberd_chi", ScalingMode.FIXED),
     HALBERD_WIND("halberd_wind", ScalingMode.FIXED),
     HALBERD_LIGHT_WIND("halberd_light_wind", ScalingMode.FIXED),
+    HALBERD_LIGHT_WIND_REAL_DAMAGE("halberd_light_wind_real_damage", ScalingMode.FIXED),
     GRAVESTONE_SLASH("gravestone_slash", ScalingMode.FIXED),
     LIGHTING_BOOM("lighting_boom", ScalingMode.FIXED),
     HALBERD_FLIGHT_HIT("halberd_flight_hit", ScalingMode.FIXED),
