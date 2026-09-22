@@ -14,22 +14,45 @@ import net.minecraft.world.entity.Entity;
  * Server-thread provenance frames for coremod-instrumented TBS damage calls.
  *
  * <p>A frame is pushed immediately before the audited call which emits damage and is
- * consumed only by a matching {@code LivingHurtEvent}. The stack, rather than a single
- * thread-local value, keeps nested damage calls isolated. The target is known for
+ * observed, but not removed, by matching {@code LivingHurtEvent}s. The audited call's
+ * post-call finish is the only operation which pops its frame. The stack, rather than
+ * a single thread-local value, keeps nested damage calls isolated. The target is known for
  * direct ability hits; range/projectile hooks use {@link #ANY_TARGET} when TBS does
  * not expose the eventual victim at their narrow scaling call site.</p>
  */
 public final class TbsDamageProvenance {
     static final int ANY_TARGET = -1;
 
-    public record Frame(
-        TbsDamagePath path,
-        UUID ownerId,
-        int targetId,
-        boolean alreadyScaled,
-        ResourceLocation expectedDamageType,
-        boolean requiresPlayerAttackSource
-    ) {
+    public static final class Frame {
+        private final TbsDamagePath path;
+        private final UUID ownerId;
+        private final int targetId;
+        private boolean alreadyScaled;
+        private final ResourceLocation expectedDamageType;
+        private final boolean requiresPlayerAttackSource;
+        private boolean observedEvent;
+
+        private Frame(
+            TbsDamagePath path,
+            UUID ownerId,
+            int targetId,
+            boolean alreadyScaled,
+            ResourceLocation expectedDamageType,
+            boolean requiresPlayerAttackSource
+        ) {
+            this.path = path;
+            this.ownerId = ownerId;
+            this.targetId = targetId;
+            this.alreadyScaled = alreadyScaled;
+            this.expectedDamageType = expectedDamageType;
+            this.requiresPlayerAttackSource = requiresPlayerAttackSource;
+        }
+
+        public TbsDamagePath path() { return path; }
+        public boolean alreadyScaled() { return alreadyScaled; }
+        void setAlreadyScaled(boolean value) { alreadyScaled = value; }
+        void observeEvent() { observedEvent = true; }
+
         boolean matches(ServerPlayer player, Entity victim, DamageSource source) {
             return ownerId != null
                 && ownerId.equals(player.getUUID())
@@ -48,7 +71,7 @@ public final class TbsDamageProvenance {
     private TbsDamageProvenance() {
     }
 
-    static void push(
+    static Frame push(
         TbsDamagePath path,
         Entity owner,
         Entity target,
@@ -58,12 +81,14 @@ public final class TbsDamageProvenance {
     ) {
         UUID ownerId = owner instanceof ServerPlayer player ? player.getUUID() : null;
         int targetId = target == null ? ANY_TARGET : target.getId();
-        FRAMES.get().push(new Frame(
+        Frame frame = new Frame(
             path, ownerId, targetId, alreadyScaled,
-            expectedDamageType, requiresPlayerAttackSource));
+            expectedDamageType, requiresPlayerAttackSource);
+        FRAMES.get().push(frame);
+        return frame;
     }
 
-    static Frame consumeMatching(ServerPlayer player, Entity victim, DamageSource source) {
+    static Frame observeMatching(ServerPlayer player, Entity victim, DamageSource source) {
         Deque<Frame> frames = FRAMES.get();
         Frame frame = frames.peek();
         if (frame == null) {
@@ -73,13 +98,12 @@ public final class TbsDamageProvenance {
         if (!frame.matches(player, victim, source)) {
             return null;
         }
-        frames.pop();
-        removeThreadLocalWhenEmpty(frames);
+        frame.observeEvent();
         return frame;
     }
 
-    /** Balances one injected call after it returns when its frame was not consumed. */
-    static void discardTop() {
+    /** Ends one audited call and pops exactly its still-top provenance frame. */
+    static void finishTop() {
         Deque<Frame> frames = FRAMES.get();
         if (!frames.isEmpty()) {
             frames.pop();

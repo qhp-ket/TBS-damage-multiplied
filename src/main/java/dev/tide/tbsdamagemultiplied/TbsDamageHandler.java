@@ -54,10 +54,11 @@ public final class TbsDamageHandler {
             return;
         }
 
-        // Consume explicit provenance before any other listener can synchronously emit
-        // nested damage. A non-matching nested event leaves the outer frame untouched.
+        // Observe explicit provenance before any other listener can synchronously emit
+        // nested damage. A non-matching nested event leaves the outer frame untouched;
+        // the audited call's post-call finish owns frame removal.
         TbsDamageProvenance.Frame frame =
-            TbsProjectileDamageHook.consumeMatchingFrame(player, victim, source);
+            TbsProjectileDamageHook.observeMatchingFrame(player, victim, source);
         if (frame != null) {
             if (!TbsDamageMultipliedConfig.COMMON.enabled.get()) {
                 return;

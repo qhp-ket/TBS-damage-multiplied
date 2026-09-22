@@ -33,12 +33,13 @@ public final class TbsProjectileDamageHook {
         Entity target,
         String pathId,
         boolean emitsLivingHurtEvent) {
+        TbsDamageProvenance.Frame frame = null;
         try {
             TbsDamagePath path = TbsDamagePath.byId(pathId);
             if (emitsLivingHurtEvent) {
                 // The existing projectile/range hooks do not always have the eventual
                 // victim in scope. They still carry owner + path and are stacked safely.
-                TbsDamageProvenance.push(
+                frame = TbsDamageProvenance.push(
                     path, owner, target, false, expectedDamageType(path), false);
             }
             if (!TbsDamageMultipliedConfig.COMMON.enabled.get()
@@ -57,9 +58,7 @@ public final class TbsProjectileDamageHook {
             }
 
             if (emitsLivingHurtEvent) {
-                TbsDamageProvenance.discardTop();
-                TbsDamageProvenance.push(
-                    path, owner, target, true, expectedDamageType(path), false);
+                frame.setAlreadyScaled(true);
             }
             float scaled = (float) result;
             if (TbsDamageMultipliedConfig.COMMON.debug.get()) {
@@ -83,16 +82,16 @@ public final class TbsProjectileDamageHook {
     }
 
     /** Called at HIGHEST priority before unrelated listeners can create nested damage. */
-    public static TbsDamageProvenance.Frame consumeMatchingFrame(
+    public static TbsDamageProvenance.Frame observeMatchingFrame(
         ServerPlayer player,
         Entity victim,
         net.minecraft.world.damagesource.DamageSource source) {
-        return TbsDamageProvenance.consumeMatching(player, victim, source);
+        return TbsDamageProvenance.observeMatching(player, victim, source);
     }
 
     /** Called by injected bytecode after the audited call returns, including no-event hits. */
-    public static void clearEventScaledPath() {
-        TbsDamageProvenance.discardTop();
+    public static void finishFrame() {
+        TbsDamageProvenance.finishTop();
     }
 
     public static void clearProvenance() {
