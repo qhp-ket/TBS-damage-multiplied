@@ -99,5 +99,5 @@ endorsed by the Torches Become Sunlight developers.
 
 GNU General Public License v3.0. See [LICENSE](LICENSE).
 
-Torches Become Sunlight is distributed under its own license. This project is
-released under GPL-3.0.
+Torches Become Sunlight is distributed under GPL-3.0. This project is released
+under the same license.
