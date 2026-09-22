@@ -1,0 +1,55 @@
+plugins {
+    id 'eclipse'
+    id 'idea'
+    id 'net.minecraftforge.gradle' version '6.0.54'
+}
+
+version = mod_version
+group = mod_group_id
+
+base {
+    archivesName = "${mod_id}-forge-${minecraft_version}"
+}
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+
+minecraft {
+    mappings channel: 'official', version: minecraft_version
+    copyIdeResources = true
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
+}
+
+tasks.named('processResources', ProcessResources).configure {
+    inputs.properties version: project.version, mod_id: mod_id
+    filesMatching('META-INF/mods.toml') {
+        expand version: project.version, mod_id: mod_id
+    }
+}
+
+tasks.named('jar', Jar).configure {
+    archiveFileName = "${mod_id}-${mod_version}-forge-${minecraft_version}.jar"
+    manifest {
+        attributes(
+            'FMLModType': 'MOD',
+            'Specification-Title': mod_id,
+            'Specification-Vendor': 'tide',
+            'Specification-Version': '1',
+            'Implementation-Title': mod_id,
+            'Implementation-Version': project.version,
+            'Implementation-Vendor': 'tide'
+        )
+    }
+    finalizedBy 'reobfJar'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 17
+}
